@@ -8,7 +8,14 @@ export default defineConfig({
     solidStart(),
     tailwindcss(),
     nitro({
-      preset: "cloudflare-module"
-    })
-  ]
+      preset: "cloudflare-module",
+    }),
+  ],
+  server: {
+    preset: "cloudflare-pages",
+
+    rollupConfig: {
+      external: ["node:async_hooks"],
+    },
+  },
 });
