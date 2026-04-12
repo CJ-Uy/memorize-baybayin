@@ -1,21 +1,5 @@
-import { defineConfig } from "vite";
-import { nitroV2Plugin as nitro } from "@solidjs/vite-plugin-nitro-2";
-import { solidStart } from "@solidjs/start/config";
-import tailwindcss from "@tailwindcss/vite";
+import tailwindcss from '@tailwindcss/vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
 
-export default defineConfig({
-  plugins: [
-    solidStart(),
-    tailwindcss(),
-    nitro({
-      preset: "cloudflare-module",
-    }),
-  ],
-  server: {
-    preset: "cloudflare-pages",
-
-    rollupConfig: {
-      external: ["node:async_hooks"],
-    },
-  },
-});
+export default defineConfig({ plugins: [tailwindcss(), sveltekit()] });
