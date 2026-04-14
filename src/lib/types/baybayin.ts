@@ -37,16 +37,32 @@ export interface ParagraphEntry {
   source: string;         // citation
 }
 
+export type AppPhase = 'config' | 'quiz' | 'results';
+
+export interface SessionResult {
+  cardId: string;
+  display: string;   // what was shown
+  answer: string;    // correct answer
+  userInput: string; // what the user gave
+  correct: boolean;
+}
+
 export interface SessionState {
+  appPhase: AppPhase;
   level: QuizLevel;
   direction: DirectionMode;
-  correctCount: number;
-  totalCount: number;
+  kudlitFilter: KudlitMode[];
+  sessionSize: number;
   currentItem: QuizItem | null;
   feedback: FeedbackState;
-  kudlitFilter: KudlitMode[];
+  sessionQueue: string[];  // SM-2 ordered card IDs
+  sessionIndex: number;
+  sessionResults: SessionResult[];
+  correctCount: number;
+  totalCount: number;
   paragraphInput: string;
   paragraphSubmitted: boolean;
+  diffTokens: DiffToken[];
 }
 
 export interface DiffToken {

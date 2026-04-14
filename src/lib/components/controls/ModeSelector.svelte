@@ -15,7 +15,7 @@
     <button
       role="tab"
       type="button"
-      class="tab gap-1 {session.level === level ? 'tab-active !bg-[hsl(180_60%_25%)] !text-white' : ''}"
+      class="tab gap-1 text-[hsl(0_0%_15%)]! {session.level === level ? 'bg-primary! text-white!' : 'hover:bg-border!'}"
       onclick={() => setLevel(level)}
     >
       <span class="font-medium">{label}</span>

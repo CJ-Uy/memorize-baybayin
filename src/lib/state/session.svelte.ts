@@ -1,139 +1,248 @@
-import { characters, getDisplay, getRoman } from '$lib/data/characters';
+import { characters, getDisplay, getRoman, findChar } from '$lib/data/characters';
 import { wordDictionary } from '$lib/data/words';
 import { buildDistractors } from '$lib/utils/distractors';
-import type { SessionState, QuizItem, KudlitMode, DirectionMode, QuizLevel, BaybayinChar } from '$lib/types/baybayin';
+import { loadCards, saveCards, getOrCreateCard, updateCard, prioritizeCards } from '$lib/utils/sm2';
+import type {
+  SessionState,
+  QuizItem,
+  KudlitMode,
+  DirectionMode,
+  QuizLevel,
+  BaybayinChar,
+  SessionResult,
+  DiffToken,
+} from '$lib/types/baybayin';
+
+// ─── State ────────────────────────────────────────────────────────────────────
 
 export const session = $state<SessionState>({
+  appPhase: 'config',
   level: 1,
   direction: 'to-roman',
-  correctCount: 0,
-  totalCount: 0,
+  kudlitFilter: ['base'],
+  sessionSize: 10,
   currentItem: null,
   feedback: 'idle',
-  kudlitFilter: ['base'],
+  sessionQueue: [],
+  sessionIndex: 0,
+  sessionResults: [],
+  correctCount: 0,
+  totalCount: 0,
   paragraphInput: '',
   paragraphSubmitted: false,
+  diffTokens: [],
 });
 
-/**
- * Pick a random element from an array.
- */
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+// ─── Card ID helpers ─────────────────────────────────────────────────────────
 
 /**
- * Get the eligible characters for the current kudlit filter.
- * If filter includes 'virama', exclude vowels (they have no virama form).
+ * Card ID format:
+ *   Character cards : "{hex}:{kudlitMode}"  e.g. "170b:base", "1703:i_e"
+ *   Word cards      : "word:{tagalog}"      e.g. "word:manok"
  */
-function getEligibleChars(): BaybayinChar[] {
-  const filter = session.kudlitFilter[0];
-  if (filter === 'virama') {
-    return characters.filter(c => !c.isVowel);
+function charCardId(char: BaybayinChar, mode: KudlitMode): string {
+  return `${char.unicode.codePointAt(0)!.toString(16)}:${mode}`;
+}
+
+function parseCharCardId(id: string): { char: BaybayinChar; mode: KudlitMode } | null {
+  const colonIdx = id.indexOf(':');
+  if (colonIdx === -1) return null;
+  const hex = id.slice(0, colonIdx);
+  const mode = id.slice(colonIdx + 1) as KudlitMode;
+  const unicode = String.fromCodePoint(parseInt(hex, 16));
+  const char = findChar(unicode);
+  return char ? { char, mode } : null;
+}
+
+// ─── Card generation ─────────────────────────────────────────────────────────
+
+function generateCardIds(level: QuizLevel, kudlitFilter: KudlitMode[]): string[] {
+  if (level === 3) {
+    return wordDictionary.map(w => `word:${w.tagalog}`);
   }
-  return characters;
+  const ids: string[] = [];
+  for (const char of characters) {
+    for (const mode of kudlitFilter) {
+      if (mode === 'virama' && char.isVowel) continue;
+      ids.push(charCardId(char, mode));
+    }
+  }
+  return ids;
 }
 
-/**
- * Advance to the next quiz item. Call this after feedback resolves.
- */
-export function nextItem(): void {
-  const eligible = getEligibleChars();
-  if (eligible.length === 0) return;
+// ─── QuizItem builder ────────────────────────────────────────────────────────
 
-  const char = pickRandom(eligible);
+function buildItem(cardId: string): QuizItem | null {
+  const dir = session.direction;
   const mode: KudlitMode = session.kudlitFilter[0] ?? 'base';
 
-  const displayBaybayin = getDisplay(char, mode);
-  const answerRoman = getRoman(char, mode);
-
-  const distractors = buildDistractors(char, mode, session.direction, eligible);
-
-  // For level 3 (words), override with a random word
-  if (session.level === 3) {
-    const word = pickRandom(wordDictionary);
-    session.currentItem = {
-      display: session.direction === 'to-roman' ? word.baybayin : word.tagalog,
-      answer:  session.direction === 'to-roman' ? word.tagalog  : word.baybayin,
-      distractors: [], // Level 3 uses text input, not multiple choice
+  if (cardId.startsWith('word:')) {
+    const tagalog = cardId.slice(5);
+    const word = wordDictionary.find(w => w.tagalog === tagalog);
+    if (!word) return null;
+    return {
+      display: dir === 'to-roman' ? word.baybayin : word.tagalog,
+      answer:  dir === 'to-roman' ? word.tagalog  : word.baybayin,
+      distractors: [],
       kudlitMode: mode,
-      level: 3,
-      direction: session.direction,
-      charRef: char, // not meaningful for level 3 but satisfies type
+      level: session.level,
+      direction: dir,
+      charRef: characters[0], // word cards don't have a meaningful charRef
     };
-    return;
   }
 
-  session.currentItem = {
-    display: session.direction === 'to-roman' ? displayBaybayin : answerRoman,
-    answer:  session.direction === 'to-roman' ? answerRoman     : displayBaybayin,
+  const parsed = parseCharCardId(cardId);
+  if (!parsed) return null;
+
+  const { char, mode: cardMode } = parsed;
+  const baybayin = getDisplay(char, cardMode);
+  const roman = getRoman(char, cardMode);
+
+  // Skip items where the baybayin display is empty (e.g. virama on a vowel)
+  if (!baybayin && !roman) return null;
+
+  const eligibleChars = characters.filter(c => {
+    if (cardMode === 'virama') return !c.isVowel;
+    return true;
+  });
+  const distractors = buildDistractors(char, cardMode, dir, eligibleChars);
+
+  return {
+    display: dir === 'to-roman' ? baybayin : roman,
+    answer:  dir === 'to-roman' ? roman    : baybayin,
     distractors,
-    kudlitMode: mode,
+    kudlitMode: cardMode,
     level: session.level,
-    direction: session.direction,
+    direction: dir,
     charRef: char,
   };
 }
 
-/**
- * Submit an answer. Returns true if correct.
- * Automatically advances after 800ms.
- */
-export function submitAnswer(userInput: string): boolean {
-  if (!session.currentItem) return false;
-
-  const { isCorrect } = (() => {
-    // inline to avoid circular import
-    const u = userInput.trim().toLowerCase();
-    const e = session.currentItem!.answer.trim().toLowerCase();
-    const flex = (s: string) => s.replace(/e/g, 'i').replace(/u/g, 'o');
-    return { isCorrect: u === e || flex(u) === flex(e) };
-  })();
-
-  session.totalCount += 1;
-  session.feedback = isCorrect ? 'correct' : 'incorrect';
-  if (isCorrect) session.correctCount += 1;
-
-  setTimeout(() => {
-    session.feedback = 'idle';
-    nextItem();
-  }, 800);
-
-  return isCorrect;
-}
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Reset session counters and pick a new item.
+ * Start a quiz session. Builds SM-2 ordered card queue and switches to quiz phase.
  */
-export function resetSession(): void {
+export function startQuiz(): void {
+  const allIds = generateCardIds(session.level, session.kudlitFilter);
+  const stored = loadCards();
+  const ordered = prioritizeCards(allIds, stored);
+  const queue = session.level === 4 ? [] : ordered.slice(0, session.sessionSize);
+
+  session.sessionQueue = queue;
+  session.sessionIndex = 0;
+  session.sessionResults = [];
   session.correctCount = 0;
   session.totalCount = 0;
   session.feedback = 'idle';
   session.paragraphInput = '';
   session.paragraphSubmitted = false;
-  nextItem();
+  session.diffTokens = [];
+  session.appPhase = 'quiz';
+
+  if (session.level !== 4) {
+    loadNextItem();
+  }
 }
 
 /**
- * Change level and reset.
+ * Load the current card in the queue as the active QuizItem.
  */
+function loadNextItem(): void {
+  const cardId = session.sessionQueue[session.sessionIndex];
+  if (!cardId) {
+    session.appPhase = 'results';
+    return;
+  }
+  const item = buildItem(cardId);
+  if (!item) {
+    // Skip broken cards
+    session.sessionIndex += 1;
+    loadNextItem();
+    return;
+  }
+  session.currentItem = item;
+}
+
+/**
+ * Submit an answer for the current card. Handles SM-2 update and session advancement.
+ */
+export function submitAnswer(userInput: string): boolean {
+  if (!session.currentItem) return false;
+
+  const u = userInput.trim().toLowerCase();
+  const e = session.currentItem.answer.trim().toLowerCase();
+  const flex = (s: string) => s.replace(/e/g, 'i').replace(/u/g, 'o');
+  const correct = u === e || flex(u) === flex(e);
+
+  // Record result
+  const cardId = session.sessionQueue[session.sessionIndex] ?? 'unknown';
+  const result: SessionResult = {
+    cardId,
+    display: session.currentItem.display,
+    answer: session.currentItem.answer,
+    userInput,
+    correct,
+  };
+  session.sessionResults = [...session.sessionResults, result];
+
+  // Update SM-2 state
+  const stored = loadCards();
+  const card = getOrCreateCard(cardId, stored);
+  stored[cardId] = updateCard(card, correct ? 5 : 0);
+  saveCards(stored);
+
+  // Update counters
+  session.totalCount += 1;
+  session.feedback = correct ? 'correct' : 'incorrect';
+  if (correct) session.correctCount += 1;
+
+  setTimeout(() => {
+    session.feedback = 'idle';
+    session.sessionIndex += 1;
+    if (session.sessionIndex >= session.sessionQueue.length) {
+      session.appPhase = 'results';
+    } else {
+      loadNextItem();
+    }
+  }, 800);
+
+  return correct;
+}
+
+/**
+ * Called from ParagraphMode when the user submits a transcription.
+ */
+export function finishParagraph(tokens: DiffToken[], input: string): void {
+  session.diffTokens = tokens;
+  session.paragraphInput = input;
+  session.paragraphSubmitted = true;
+  session.appPhase = 'results';
+}
+
+/**
+ * Return to config screen from results.
+ */
+export function goToConfig(): void {
+  session.appPhase = 'config';
+  session.currentItem = null;
+  session.feedback = 'idle';
+}
+
+// ─── Config setters (used by ConfigScreen before quiz starts) ─────────────────
+
 export function setLevel(level: QuizLevel): void {
   session.level = level;
-  resetSession();
 }
 
-/**
- * Change direction and reset.
- */
 export function setDirection(dir: DirectionMode): void {
   session.direction = dir;
-  resetSession();
 }
 
-/**
- * Update kudlit filter and reset.
- */
 export function setKudlitFilter(modes: KudlitMode[]): void {
   session.kudlitFilter = modes.length > 0 ? modes : ['base'];
-  resetSession();
+}
+
+export function setSessionSize(size: number): void {
+  session.sessionSize = size;
 }
