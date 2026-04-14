@@ -1,3 +1,51 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+@plugin 'daisyui';
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tagalog&family=Inter:wght@400;500;600&display=swap');
+
+@theme {
+  --color-background: hsl(50 20% 98%);
+  --color-foreground: hsl(0 0% 15%);
+  --color-primary: hsl(180 60% 25%);
+  --color-primary-foreground: hsl(0 0% 98%);
+  --color-secondary: hsl(35 90% 65%);
+  --color-secondary-foreground: hsl(0 0% 15%);
+  --color-muted: hsl(30 10% 90%);
+  --color-muted-foreground: hsl(30 5% 45%);
+  --color-border: hsl(30 10% 85%);
+  --color-card: hsl(50 20% 98%);
+  --color-card-foreground: hsl(0 0% 15%);
+  --font-baybayin: 'Noto Sans Tagalog', serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* Feedback animations */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-6px); }
+  40%       { transform: translateX(6px); }
+  60%       { transform: translateX(-4px); }
+  80%       { transform: translateX(4px); }
+}
+
+@keyframes pulse-correct {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.06); opacity: 0.9; }
+}
+
+@keyframes flash-correct {
+  0%, 100% { background-color: transparent; }
+  50%       { background-color: hsl(142 60% 90%); }
+}
+
+@keyframes flash-incorrect {
+  0%, 100% { background-color: transparent; }
+  50%       { background-color: hsl(0 80% 92%); }
+}
+
+.animate-shake        { animation: shake 0.4s ease-in-out; }
+.animate-correct      { animation: pulse-correct 0.5s ease-in-out; }
+.animate-flash-correct   { animation: flash-correct 0.5s ease-in-out; }
+.animate-flash-incorrect { animation: flash-incorrect 0.5s ease-in-out; }

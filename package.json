@@ -15,7 +15,9 @@
 		"cf-typegen": "wrangler types src/worker-configuration.d.ts"
 	},
 	"pnpm": {
-		"onlyBuiltDependencies": ["esbuild"]
+		"onlyBuiltDependencies": [
+			"esbuild"
+		]
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-cloudflare": "^7.2.6",
@@ -31,5 +33,9 @@
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1",
 		"wrangler": "^4.81.1"
+	},
+	"dependencies": {
+		"daisyui": "^5.5.19",
+		"lucide-svelte": "^1.0.1"
 	}
 }
